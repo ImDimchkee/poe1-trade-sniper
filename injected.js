@@ -94,6 +94,13 @@ function dispatchRateEvent(url, status, headers) {
         response.status,
         (name) => response.headers.get(name)
       );
+      if (url.includes('/api/trade/whisper')) {
+        response.clone().json().then((data) => {
+          window.dispatchEvent(new CustomEvent('svitlana-whisper', {
+            detail: { success: !!data.success }
+          }));
+        }).catch(() => {});
+      }
       return response;
     });
   };

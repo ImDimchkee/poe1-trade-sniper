@@ -15,6 +15,8 @@ let rateLimitMax         = 6;
 let wsExpectingNewRows   = false;
 let cooldownUntil        = 0;
 let cooldownTimer        = null;
+let lastClickedScope     = null;
+let whisperRetries       = 0;
 let ratePauseActive      = false;
 let ratePauseTimer       = null;
 let newItemsSinceClear   = 0;    // clear seen every 10 WS-delivered items
@@ -283,6 +285,40 @@ window.addEventListener('svitlana-rate', (e) => {
   }
 });
 
+// ─── Whisper result ───────────────────────────────────────────────────────────
+
+window.addEventListener('svitlana-whisper', (e) => {
+  const { success } = e.detail;
+  if (success) {
+    whisperRetries = 0;
+    log('info', 'whisper_success', {});
+    return;
+  }
+
+  if (whisperRetries < 1 && lastClickedScope) {
+    // First failure — retry once
+    whisperRetries++;
+    const retryBtn = [...lastClickedScope.querySelectorAll('button')].find(
+      (b) => b.textContent.includes('Teleport anyway')
+    );
+    if (retryBtn) {
+      retryBtn.click();
+      log('warn', 'whisper_retry', { attempt: whisperRetries });
+      return;
+    }
+  }
+
+  // Second failure or button gone — cancel cooldown and move on
+  whisperRetries = 0;
+  cooldownUntil  = 0;
+  if (cooldownTimer) { clearInterval(cooldownTimer); cooldownTimer = null; }
+  const label   = overlayEl?.querySelector('#svitlana-cooldown');
+  const skipBtn = overlayEl?.querySelector('#svitlana-skip');
+  if (label)   { label.textContent = ''; label.style.display = 'none'; }
+  if (skipBtn) { skipBtn.style.display = 'none'; }
+  log('warn', 'whisper_failed', { retried: whisperRetries > 0 });
+});
+
 // ─── Live search button helpers ───────────────────────────────────────────────
 
 function findLiveSearchBtn(text) {
@@ -398,6 +434,8 @@ function handleNewResultset(row) {
     return;
   }
 
+  lastClickedScope = scope;
+  whisperRetries   = 0;
   playAlert();
   btn.click();
   log('info', 'clicked', { name, price: priceStr, via: confirmBtn ? 'confirm_direct' : 'direct_btn' });
