@@ -116,6 +116,7 @@ function triggerEmergencyStop(reason) {
 function triggerRatePause(restrictionSeconds) {
   const secs = restrictionSeconds > 0 ? restrictionSeconds : 10;
   ratePauseActive = true;
+  updateOverlay(); // show ⏳ WAITING immediately
 
   // Reset timer if called multiple times (multiple 429s)
   if (ratePauseTimer) clearTimeout(ratePauseTimer);
@@ -649,6 +650,7 @@ function createOverlay() {
     #poe-sniper-btn.stop:hover { background: #c0392b; }
     #poe-sniper-btn.start { background: #1a3a1a; border: 1px solid #2d6a2d; color: #a0d0a0; }
     #poe-sniper-btn.start:hover { background: #2d5a2d; }
+    #poe-sniper-btn.wait  { background: #2a1e00; border: 1px solid #7a6020; color: #fbc02d; cursor: default; }
   `;
   document.head.appendChild(style);
 
@@ -704,14 +706,18 @@ function createOverlay() {
   });
 
   el.querySelector('#poe-sniper-btn').addEventListener('click', () => {
-    if (enabled && !emergency) {
+    if (ratePauseActive || (enabled && !emergency)) {
+      // STOP / cancel waiting → emergency stop
+      ratePauseActive = false;
+      if (ratePauseTimer) { clearTimeout(ratePauseTimer); ratePauseTimer = null; }
       emergency = true;
       enabled   = false;
-      saveState({ enabled: false, emergency: true, emergency_reason: 'overlay_button', emergency_ts: Date.now() });
+      saveState({ enabled: false, emergency: true, emergency_reason: 'overlay_button', emergency_ts: Date.now(), rate_pause_until: 0 });
       log('warn', 'emergency_stop', { reason: 'overlay_button' });
       deactivateLiveSearch();
       updateOverlay();
     } else {
+      // START
       emergency = false;
       enabled   = true;
       saveState({ enabled: true, emergency: false, emergency_reason: null });
@@ -741,19 +747,19 @@ function updateOverlay() {
   const btn = overlayEl.querySelector('#poe-sniper-btn');
 
   if (emergency) {
-    dot.className = 'red';
-  } else if (rateLimitUsed >= rateLimitMax - 1) {
-    dot.className = 'yellow';
+    dot.className   = 'red';
+    btn.textContent = '▶ START';
+    btn.className   = 'start';
+  } else if (ratePauseActive) {
+    dot.className   = 'yellow';
+    btn.textContent = '⏳ WAITING';
+    btn.className   = 'wait';
   } else if (enabled) {
-    dot.className = '';
-  } else {
-    dot.className = 'red';
-  }
-
-  if (enabled && !emergency) {
+    dot.className   = rateLimitUsed >= rateLimitMax - 1 ? 'yellow' : '';
     btn.textContent = '■ STOP';
     btn.className   = 'stop';
   } else {
+    dot.className   = 'red';
     btn.textContent = '▶ START';
     btn.className   = 'start';
   }
