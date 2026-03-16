@@ -13,6 +13,12 @@
   "host_permissions": ["*://www.pathofexile.com/trade*"],
   "content_scripts": [
     {
+      "world": "MAIN",
+      "matches": ["*://www.pathofexile.com/trade/*"],
+      "js": ["injected.js"],
+      "run_at": "document_start"
+    },
+    {
       "matches": ["*://www.pathofexile.com/trade/*"],
       "js": ["content.js"],
       "run_at": "document_idle"
