@@ -15,8 +15,8 @@ let rateLimitMax         = 6;
 let wsExpectingNewRows   = false;
 let cooldownUntil        = 0;
 let cooldownTimer        = null;
-let lastClickedScope     = null;
-let whisperRetries       = 0;
+let lastClickedRow       = null;
+let whisperRetried       = false;
 let ratePauseActive      = false;
 let ratePauseTimer       = null;
 let newItemsSinceClear   = 0;    // clear seen every 10 WS-delivered items
@@ -290,33 +290,29 @@ window.addEventListener('svitlana-rate', (e) => {
 window.addEventListener('svitlana-whisper', (e) => {
   const { success } = e.detail;
   if (success) {
-    whisperRetries = 0;
     log('info', 'whisper_success', {});
     return;
   }
 
-  if (whisperRetries < 1 && lastClickedScope) {
-    // First failure — retry once
-    whisperRetries++;
-    const retryBtn = [...lastClickedScope.querySelectorAll('button')].find(
-      (b) => b.textContent.includes('Teleport anyway')
-    );
+  // First failure — the expired direct-btn is still in DOM, click it once more
+  if (!whisperRetried && lastClickedRow) {
+    const retryBtn = lastClickedRow.querySelector('.btns .direct-btn');
     if (retryBtn) {
+      whisperRetried = true;
       retryBtn.click();
-      log('warn', 'whisper_retry', { attempt: whisperRetries });
+      log('warn', 'whisper_retry', {});
       return;
     }
   }
 
   // Second failure or button gone — cancel cooldown and move on
-  whisperRetries = 0;
-  cooldownUntil  = 0;
+  cooldownUntil = 0;
   if (cooldownTimer) { clearInterval(cooldownTimer); cooldownTimer = null; }
   const label   = overlayEl?.querySelector('#svitlana-cooldown');
   const skipBtn = overlayEl?.querySelector('#svitlana-skip');
   if (label)   { label.textContent = ''; label.style.display = 'none'; }
   if (skipBtn) { skipBtn.style.display = 'none'; }
-  log('warn', 'whisper_failed', { retried: whisperRetries > 0 });
+  log('warn', 'whisper_failed', { retried: whisperRetried });
 });
 
 // ─── Live search button helpers ───────────────────────────────────────────────
@@ -434,8 +430,8 @@ function handleNewResultset(row) {
     return;
   }
 
-  lastClickedScope = scope;
-  whisperRetries   = 0;
+  lastClickedRow = row;
+  whisperRetried = false;
   playAlert();
   btn.click();
   log('info', 'clicked', { name, price: priceStr, via: confirmBtn ? 'confirm_direct' : 'direct_btn' });
@@ -474,18 +470,22 @@ function watchForConfirmation(row) {
     return;
   }
 
-  // Watch for DOM insertion OR CSS visibility changes (class/style attribute toggled)
+  // Watch for DOM insertion, class changes, or text content changes on the direct-btn
   const obs = new MutationObserver(() => {
-    const btn = findConfirmBtn();
-    if (!btn) return;
-    obs.disconnect();
-    btn.click();
-    log('info', 'confirm_clicked', {});
+    // First try text-based search (separate confirm dialog)
+    const byText = findConfirmBtn();
+    if (byText) { obs.disconnect(); byText.click(); log('info', 'confirm_clicked', {}); return; }
+
+    // GGG updates the same direct-btn in-place: adds 'expired' class + changes text.
+    // Fall back to selecting it by class directly.
+    const expired = scope.querySelector('.direct-btn.expired');
+    if (expired) { obs.disconnect(); expired.click(); log('info', 'confirm_clicked', { via: 'expired' }); }
   });
   obs.observe(scope, {
     childList: true,
     subtree: true,
     attributes: true,
+    characterData: true,
     attributeFilter: ['class', 'style', 'hidden'],
   });
   setTimeout(() => obs.disconnect(), 5000);
