@@ -195,7 +195,7 @@ window.addEventListener('poe-sniper-ws', (e) => {
     log('info', 'live_search_ws_open', { url });
   } else if (type === 'new_items') {
     wsExpectingNewRows = true;
-    setTimeout(() => { wsExpectingNewRows = false; }, 8000);
+    setTimeout(() => { wsExpectingNewRows = false; }, 25000);
 
     // Track items to know when to clear seen
     newItemsSinceClear += count;
@@ -234,12 +234,13 @@ window.addEventListener('poe-sniper-rate', (e) => {
     saveState({ rate_used: used, rate_max: rateLimitMax });
     updateOverlay();
 
-    if (status === 429 || status === 403) {
-      log('warn', 'rate_limited', { status, restrictionS: maxRestriction });
+    if (maxRestriction > 0) {
+      // Server confirmed active restriction window — pause until it clears
+      log('warn', 'rate_restricted', { status, restrictionS: maxRestriction, state: accountState });
       triggerRatePause(maxRestriction);
-    } else if (maxRestriction > 0) {
-      log('warn', 'rate_ban_active', { restrictionS: maxRestriction, state: accountState });
-      triggerRatePause(maxRestriction);
+    } else if (status === 429 || status === 403) {
+      // 429 but no active restriction in headers yet — log only, page self-recovers
+      log('warn', 'rate_limited', { status, used, max: rateLimitMax });
     } else if (used >= rateLimitMax - 2) {
       warnRateLimit(used);
     } else {
@@ -247,7 +248,6 @@ window.addEventListener('poe-sniper-rate', (e) => {
     }
   } else if (status === 429 || status === 403) {
     log('warn', 'rate_limited_no_headers', { status });
-    triggerRatePause(60);
   }
 });
 
