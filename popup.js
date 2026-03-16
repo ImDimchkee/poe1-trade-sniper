@@ -3,26 +3,26 @@
 'use strict';
 
 const toggleEnabled = document.getElementById('toggleEnabled');
-const statusDot = document.getElementById('statusDot');
-const lastActionEl = document.getElementById('lastAction');
-const rateBar = document.getElementById('rateBar');
-const rateText = document.getElementById('rateText');
-const btnStop = document.getElementById('btnStop');
-const btnResume = document.getElementById('btnResume');
-const emergencyMsg = document.getElementById('emergencyMsg');
-const toggleDebug = document.getElementById('toggleDebug');
-const logBox = document.getElementById('logBox');
-const btnExport = document.getElementById('btnExport');
+const statusDot     = document.getElementById('statusDot');
+const historyList   = document.getElementById('historyList');
+const rateBar       = document.getElementById('rateBar');
+const rateText      = document.getElementById('rateText');
+const btnStop       = document.getElementById('btnStop');
+const btnResume     = document.getElementById('btnResume');
+const emergencyMsg  = document.getElementById('emergencyMsg');
+const toggleDebug   = document.getElementById('toggleDebug');
+const logBox        = document.getElementById('logBox');
+const btnExport     = document.getElementById('btnExport');
 
 // ─── Load state ───────────────────────────────────────────────────────────────
 
 chrome.storage.local.get(
-  ['enabled', 'debug', 'emergency', 'emergency_reason', 'emergency_ts', 'last_action', 'rate_used', 'rate_max', 'sniper_log'],
+  ['enabled', 'debug', 'emergency', 'emergency_reason', 'emergency_ts', 'click_history', 'rate_used', 'rate_max', 'sniper_log'],
   (state) => {
     applyEnabled(state.enabled !== false);
     applyEmergency(!!state.emergency, state.emergency_reason, state.emergency_ts);
     applyDebug(!!state.debug);
-    applyLastAction(state.last_action);
+    renderHistory(state.click_history || []);
     applyRate(state.rate_used || 0, state.rate_max || 6);
     renderLog(state.sniper_log || []);
   }
@@ -37,7 +37,7 @@ chrome.storage.onChanged.addListener((changes) => {
       applyEmergency(changes.emergency.newValue, s.emergency_reason, s.emergency_ts);
     });
   }
-  if ('last_action' in changes) applyLastAction(changes.last_action.newValue);
+  if ('click_history' in changes) renderHistory(changes.click_history.newValue || []);
   if ('rate_used' in changes || 'rate_max' in changes) {
     chrome.storage.local.get(['rate_used', 'rate_max'], (s) => {
       applyRate(s.rate_used || 0, s.rate_max || 6);
@@ -75,11 +75,19 @@ function applyDebug(val) {
   btnExport.classList.toggle('visible', val);
 }
 
-function applyLastAction(action) {
-  if (!action) return;
-  const time = new Date(action.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  lastActionEl.textContent = `${action.name}  ${action.price}  —  ${time}`;
-  lastActionEl.classList.remove('empty');
+function renderHistory(entries) {
+  if (!entries.length) {
+    historyList.innerHTML = '<div class="history-empty">No clicks yet</div>';
+    return;
+  }
+  historyList.innerHTML = entries.map((e) => {
+    const time = new Date(e.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    return `<div class="history-entry">
+      <span class="h-time">${time}</span>
+      <span class="h-name">${e.name}</span>
+      <span class="h-price">${e.price}</span>
+    </div>`;
+  }).join('');
 }
 
 function applyRate(used, max) {

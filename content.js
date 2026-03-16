@@ -6,14 +6,19 @@
 
 // ─── State ───────────────────────────────────────────────────────────────────
 
-let enabled = true;
-let debugEnabled = false;
-let emergency = false;
-let rateLimitUsed = 0;
-let rateLimitMax = 6;
-let wsExpectingNewRows = false; // only click when triggered by live search WS
-const seen = new Set();
-const LOG = [];
+let enabled              = true;
+let debugEnabled         = false;
+let emergency            = false;
+let rateLimitUsed        = 0;
+let rateLimitMax         = 6;
+let wsExpectingNewRows   = false;
+let cooldownUntil        = 0;
+let cooldownTimer        = null;
+let newItemsSinceClear   = 0;    // clear seen every 10 WS-delivered items
+const COOLDOWN_MS        = 15000;
+const SEEN_CLEAR_AFTER   = 10;
+const seen               = new Set();
+const LOG                = [];
 
 // ─── Logging ─────────────────────────────────────────────────────────────────
 
@@ -37,9 +42,9 @@ function loadState() {
   chrome.storage.local.get(
     ['enabled', 'debug', 'emergency'],
     (result) => {
-      enabled   = result.enabled !== false;
+      enabled      = result.enabled !== false;
       debugEnabled = !!result.debug;
-      emergency = !!result.emergency;
+      emergency    = !!result.emergency;
       updateOverlay();
       log('info', 'state_loaded', { enabled, debugEnabled, emergency });
     }
@@ -58,7 +63,7 @@ chrome.storage.onChanged.addListener((changes) => {
   }
   if ('debug' in changes) {
     debugEnabled = changes.debug.newValue;
-    if (debugEnabled) flushLog(); // flush in-memory log immediately on enable
+    if (debugEnabled) flushLog();
   }
   if ('emergency' in changes) {
     emergency = changes.emergency.newValue;
@@ -89,6 +94,48 @@ function warnRateLimit(used) {
   log('warn', 'rate_limit_warning', { used, max: rateLimitMax });
 }
 
+// ─── Click history ────────────────────────────────────────────────────────────
+
+function recordClickHistory(action) {
+  chrome.storage.local.get('click_history', ({ click_history }) => {
+    const history = Array.isArray(click_history) ? click_history : [];
+    history.unshift(action);
+    if (history.length > 25) history.length = 25;
+    chrome.storage.local.set({ click_history: history });
+  });
+}
+
+// ─── Cooldown ─────────────────────────────────────────────────────────────────
+
+function isOnCooldown() {
+  return Date.now() < cooldownUntil;
+}
+
+function startCooldown() {
+  cooldownUntil = Date.now() + COOLDOWN_MS;
+  log('info', 'cooldown_started', { ms: COOLDOWN_MS });
+  startCooldownDisplay();
+}
+
+function startCooldownDisplay() {
+  if (cooldownTimer) clearInterval(cooldownTimer);
+  const label = overlayEl?.querySelector('#poe-sniper-cooldown');
+  if (!label) return;
+
+  cooldownTimer = setInterval(() => {
+    const remaining = Math.ceil((cooldownUntil - Date.now()) / 1000);
+    if (remaining <= 0) {
+      clearInterval(cooldownTimer);
+      cooldownTimer = null;
+      label.textContent = '';
+      label.style.display = 'none';
+    } else {
+      label.style.display = 'block';
+      label.textContent = `Cooldown ${remaining}s`;
+    }
+  }, 250);
+}
+
 // ─── Events from injected.js (MAIN world) ────────────────────────────────────
 
 window.addEventListener('poe-sniper-ws', (e) => {
@@ -97,9 +144,16 @@ window.addEventListener('poe-sniper-ws', (e) => {
     log('info', 'live_search_ws_open', { url });
   } else if (type === 'new_items') {
     wsExpectingNewRows = true;
-    // Safety: clear flag after 8s in case DOM update never arrives
     setTimeout(() => { wsExpectingNewRows = false; }, 8000);
-    log('info', 'ws_new_items', { count });
+
+    // Track items to know when to clear seen
+    newItemsSinceClear += count;
+    log('info', 'ws_new_items', { count, totalSinceClear: newItemsSinceClear });
+    if (newItemsSinceClear >= SEEN_CLEAR_AFTER) {
+      seen.clear();
+      newItemsSinceClear = 0;
+      log('info', 'seen_cleared', { reason: `${SEEN_CLEAR_AFTER}_items_threshold` });
+    }
   } else if (type === 'close') {
     log('info', 'live_search_ws_close', {});
   }
@@ -152,7 +206,6 @@ new MutationObserver(() => {
   }
 }).observe(document, { subtree: true, childList: true });
 
-// Also log if page loaded directly on /live URL
 if (location.href.endsWith('/live')) {
   log('info', 'live_search_activated', { via: 'direct_url' });
 }
@@ -199,6 +252,12 @@ function handleNewResultset(node) {
     log('debug', 'skipped_dupe', { id: id.slice(0, 12) });
     return;
   }
+  if (isOnCooldown()) {
+    const remaining = Math.ceil((cooldownUntil - Date.now()) / 1000);
+    log('info', 'skipped_cooldown', { remainingS: remaining });
+    seen.add(id);
+    return;
+  }
 
   seen.add(id);
 
@@ -216,19 +275,27 @@ function handleNewResultset(node) {
 
   playAlert();
   btn.click();
+  startCooldown();
 
-  const lastAction = { name, price: priceStr, ts: Date.now() };
-  saveState({ last_action: lastAction });
-  updateOverlayLastAction(lastAction);
+  const action = { name, price: priceStr, ts: Date.now() };
+  recordClickHistory(action);
+  updateOverlayLastAction(action);
   log('info', 'clicked', { name, price: priceStr });
 }
 
 // ─── MutationObserver ────────────────────────────────────────────────────────
 
-let resultsObserver = null;
+let resultsObserver  = null;
+let currentResultsEl = null;
 
 function attachResultsObserver(resultsEl) {
-  if (resultsObserver) return;
+  // Disconnect previous observer if pointing to a stale node
+  if (resultsObserver) {
+    resultsObserver.disconnect();
+    resultsObserver = null;
+  }
+  currentResultsEl = resultsEl;
+
   resultsObserver = new MutationObserver((mutations) => {
     let clickedThisBatch = false;
     for (const mutation of mutations) {
@@ -238,8 +305,8 @@ function attachResultsObserver(resultsEl) {
         const id  = row?.getAttribute('data-id');
         if (!id || seen.has(id)) continue;
 
-        if (!clickedThisBatch && wsExpectingNewRows && enabled && !emergency) {
-          wsExpectingNewRows = false; // consume the flag
+        if (!clickedThisBatch && wsExpectingNewRows && enabled && !emergency && !isOnCooldown()) {
+          wsExpectingNewRows = false;
           handleNewResultset(node);
           clickedThisBatch = true;
         } else {
@@ -249,25 +316,28 @@ function attachResultsObserver(resultsEl) {
       }
     }
   });
+
   resultsObserver.observe(resultsEl, { childList: true });
   log('info', 'observer_attached', {});
 }
 
 function watchForResults() {
-  const existing = document.querySelector('.results');
-  if (existing) {
-    attachResultsObserver(existing);
-    return;
-  }
-  log('info', 'waiting_for_results', {});
+  // Persistent body observer — re-attaches whenever .results is replaced (SPA navigation)
   const bodyObserver = new MutationObserver(() => {
     const el = document.querySelector('.results');
-    if (el) {
-      bodyObserver.disconnect();
+    if (el && el !== currentResultsEl) {
       attachResultsObserver(el);
     }
   });
   bodyObserver.observe(document.body, { childList: true, subtree: true });
+
+  // Attach immediately if already present
+  const existing = document.querySelector('.results');
+  if (existing) {
+    attachResultsObserver(existing);
+  } else {
+    log('info', 'waiting_for_results', {});
+  }
 }
 
 // ─── In-page overlay ─────────────────────────────────────────────────────────
@@ -309,12 +379,18 @@ function createOverlay() {
     #poe-sniper-dot.red    { background: #e53935; box-shadow: 0 0 6px #e53935; }
     #poe-sniper-dot.yellow { background: #fbc02d; box-shadow: 0 0 6px #fbc02d; }
     #poe-sniper-last {
-      padding: 5px 10px;
+      padding: 5px 10px 2px;
       font-size: 11px;
       color: #7a6a50;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+    }
+    #poe-sniper-cooldown {
+      display: none;
+      padding: 0 10px 4px;
+      font-size: 10px;
+      color: #fbc02d;
     }
     #poe-sniper-rate-wrap { padding: 2px 10px 5px; }
     #poe-sniper-rate-label { font-size: 10px; color: #6a5a40; margin-bottom: 3px; }
@@ -330,12 +406,11 @@ function createOverlay() {
       font-weight: bold;
       letter-spacing: 1px;
       cursor: pointer;
-      border: none;
       transition: background 0.15s;
     }
-    #poe-sniper-btn.stop   { background: #8b1a1a; border: 1px solid #c0392b; color: #ffcdd2; }
+    #poe-sniper-btn.stop  { background: #8b1a1a; border: 1px solid #c0392b; color: #ffcdd2; }
     #poe-sniper-btn.stop:hover { background: #c0392b; }
-    #poe-sniper-btn.start  { background: #1a3a1a; border: 1px solid #2d6a2d; color: #a0d0a0; }
+    #poe-sniper-btn.start { background: #1a3a1a; border: 1px solid #2d6a2d; color: #a0d0a0; }
     #poe-sniper-btn.start:hover { background: #2d5a2d; }
   `;
   document.head.appendChild(style);
@@ -348,6 +423,7 @@ function createOverlay() {
       <span id="poe-sniper-dot"></span>
     </div>
     <div id="poe-sniper-last">—</div>
+    <div id="poe-sniper-cooldown"></div>
     <div id="poe-sniper-rate-wrap">
       <div id="poe-sniper-rate-label">Rate <span id="poe-sniper-rate-text">0/6</span></div>
       <div id="poe-sniper-rate-bar-bg"><div id="poe-sniper-rate-bar"></div></div>
@@ -379,7 +455,6 @@ function createOverlay() {
     saveState({ overlay_pos: { left: el.style.left, top: el.style.top } });
   });
 
-  // Restore position
   chrome.storage.local.get('overlay_pos', ({ overlay_pos }) => {
     if (overlay_pos?.left) {
       el.style.right  = 'auto';
@@ -389,12 +464,10 @@ function createOverlay() {
     }
   });
 
-  // Button click
   el.querySelector('#poe-sniper-btn').addEventListener('click', () => {
     if (enabled && !emergency) {
       triggerEmergencyStop('overlay_button');
     } else {
-      // Resume
       emergency = false;
       enabled   = true;
       saveState({ enabled: true, emergency: false, emergency_reason: null });
@@ -412,18 +485,16 @@ function updateOverlay() {
   const dot = overlayEl.querySelector('#poe-sniper-dot');
   const btn = overlayEl.querySelector('#poe-sniper-btn');
 
-  // Dot color
   if (emergency) {
     dot.className = 'red';
   } else if (rateLimitUsed >= rateLimitMax - 1) {
     dot.className = 'yellow';
   } else if (enabled) {
-    dot.className = '';     // green (default)
+    dot.className = '';
   } else {
     dot.className = 'red';
   }
 
-  // Button label + style
   if (enabled && !emergency) {
     btn.textContent = '■ STOP';
     btn.className   = 'stop';

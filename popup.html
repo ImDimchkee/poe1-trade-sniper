@@ -70,10 +70,34 @@
     input:checked + .slider { background: #2d4a1e; }
     input:checked + .slider:before { transform: translateX(20px); background: #4caf50; }
 
-    /* ── Last action ── */
-    .last-label { font-size: 11px; color: #6a5a40; margin-bottom: 4px; }
-    .last-value { font-size: 13px; color: #c8a84b; min-height: 18px; }
-    .last-value.empty { color: #4a4030; font-style: italic; }
+    /* ── Click history ── */
+    .history-label { font-size: 11px; color: #6a5a40; margin-bottom: 6px; }
+    .history-list {
+      background: #0e0e0e;
+      border: 1px solid #2a2010;
+      border-radius: 4px;
+      height: 130px;
+      overflow-y: auto;
+      font-size: 11px;
+      font-family: 'Courier New', monospace;
+    }
+    .history-empty {
+      padding: 8px;
+      color: #4a4030;
+      font-style: italic;
+      font-family: 'Segoe UI', sans-serif;
+    }
+    .history-entry {
+      display: flex;
+      justify-content: space-between;
+      padding: 3px 7px;
+      border-bottom: 1px solid #1a1a0e;
+      color: #8a7a60;
+    }
+    .history-entry:last-child { border-bottom: none; }
+    .history-entry .h-time { color: #4a4030; flex-shrink: 0; margin-right: 6px; }
+    .history-entry .h-name { color: #c8a84b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+    .history-entry .h-price { color: #8aaa8a; flex-shrink: 0; margin-left: 6px; }
 
     /* ── Rate bar ── */
     .rate-label {
@@ -226,8 +250,10 @@
   </div>
 
   <div class="section">
-    <div class="last-label">Last action</div>
-    <div class="last-value empty" id="lastAction">No actions yet</div>
+    <div class="history-label">Click history</div>
+    <div class="history-list" id="historyList">
+      <div class="history-empty">No clicks yet</div>
+    </div>
   </div>
 
   <div class="section">
