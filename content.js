@@ -6,7 +6,7 @@
 
 // ─── State ───────────────────────────────────────────────────────────────────
 
-let enabled              = true;
+let enabled              = false;
 let debugEnabled         = false;
 let emergency            = false;
 let rateLimitUsed        = 0;

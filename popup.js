@@ -19,7 +19,7 @@ const btnExport     = document.getElementById('btnExport');
 chrome.storage.local.get(
   ['enabled', 'debug', 'emergency', 'emergency_reason', 'emergency_ts', 'click_history', 'rate_used', 'rate_max', 'sniper_log'],
   (state) => {
-    applyEnabled(state.enabled !== false);
+    applyEnabled(!!state.enabled);
     applyEmergency(!!state.emergency, state.emergency_reason, state.emergency_ts);
     applyDebug(!!state.debug);
     renderHistory(state.click_history || []);
@@ -50,6 +50,8 @@ chrome.storage.onChanged.addListener((changes) => {
 
 function applyEnabled(val) {
   toggleEnabled.checked = val;
+  // EMERGENCY STOP is only meaningful when sniping is active
+  btnStop.disabled = !val;
   updateDot(val, false);
 }
 
@@ -63,7 +65,8 @@ function applyEmergency(val, reason, ts) {
     emergencyMsg.style.display = 'block';
     updateDot(false, true);
   } else {
-    btnStop.disabled = false;
+    // Only re-enable the stop button if sniper is actually on
+    btnStop.disabled = !toggleEnabled.checked;
     btnResume.style.display = 'none';
     emergencyMsg.style.display = 'none';
   }
@@ -126,6 +129,7 @@ function renderLog(entries) {
 // ─── Controls ─────────────────────────────────────────────────────────────────
 
 toggleEnabled.addEventListener('change', () => {
+  btnStop.disabled = !toggleEnabled.checked;
   chrome.storage.local.set({ enabled: toggleEnabled.checked, emergency: false });
 });
 
