@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PoE Trade Sniper</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      width: 300px;
+      background: #1a1a1a;
+      color: #d0c4a0;
+      font-family: 'Segoe UI', sans-serif;
+      font-size: 13px;
+    }
+
+    /* ── Header ── */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px 9px;
+      border-bottom: 1px solid #2e2a1e;
+      background: #111;
+    }
+    .header-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #c8a84b;
+      letter-spacing: 0.5px;
+    }
+    .status-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: #4caf50;
+      box-shadow: 0 0 6px #4caf50;
+    }
+    .status-dot.red   { background: #e53935; box-shadow: 0 0 6px #e53935; }
+    .status-dot.yellow{ background: #fbc02d; box-shadow: 0 0 6px #fbc02d; }
+
+    /* ── Section ── */
+    .section { padding: 12px 14px; border-bottom: 1px solid #252015; }
+
+    /* ── Toggle ── */
+    .row-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .row-toggle label { color: #a09070; font-size: 12px; }
+    .toggle-wrap { position: relative; display: inline-block; width: 44px; height: 24px; }
+    .toggle-wrap input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute; inset: 0;
+      background: #333;
+      border-radius: 24px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .slider:before {
+      content: '';
+      position: absolute;
+      width: 18px; height: 18px;
+      left: 3px; top: 3px;
+      background: #888;
+      border-radius: 50%;
+      transition: transform 0.2s, background 0.2s;
+    }
+    input:checked + .slider { background: #2d4a1e; }
+    input:checked + .slider:before { transform: translateX(20px); background: #4caf50; }
+
+    /* ── Last action ── */
+    .last-label { font-size: 11px; color: #6a5a40; margin-bottom: 4px; }
+    .last-value { font-size: 13px; color: #c8a84b; min-height: 18px; }
+    .last-value.empty { color: #4a4030; font-style: italic; }
+
+    /* ── Rate bar ── */
+    .rate-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      color: #6a5a40;
+      margin-bottom: 4px;
+    }
+    .rate-bar-bg {
+      height: 6px;
+      background: #2a2010;
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .rate-bar {
+      height: 100%;
+      width: 0%;
+      background: #c8a84b;
+      border-radius: 3px;
+      transition: width 0.3s, background 0.3s;
+    }
+
+    /* ── Stop button ── */
+    .btn-stop {
+      width: 100%;
+      padding: 9px;
+      background: #5a1010;
+      border: 1px solid #8b2020;
+      border-radius: 5px;
+      color: #ffcdd2;
+      font-size: 13px;
+      font-weight: bold;
+      letter-spacing: 1.5px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .btn-stop:hover { background: #8b1a1a; }
+    .btn-stop:disabled { background: #2a2020; color: #5a4040; border-color: #3a2020; cursor: default; }
+
+    .btn-resume {
+      width: 100%;
+      padding: 7px;
+      background: #1a3a1a;
+      border: 1px solid #2d6a2d;
+      border-radius: 5px;
+      color: #a0d0a0;
+      font-size: 12px;
+      font-weight: bold;
+      cursor: pointer;
+      margin-top: 6px;
+      transition: background 0.15s;
+      display: none;
+    }
+    .btn-resume:hover { background: #2d5a2d; }
+
+    .emergency-msg {
+      font-size: 11px;
+      color: #e57373;
+      margin-top: 5px;
+      display: none;
+    }
+
+    /* ── Debug ── */
+    .debug-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .debug-header span { font-size: 12px; color: #6a5a40; }
+    .debug-toggle-wrap { position: relative; display: inline-block; width: 36px; height: 20px; }
+    .debug-toggle-wrap input { opacity: 0; width: 0; height: 0; }
+    .debug-slider {
+      position: absolute; inset: 0;
+      background: #2a2010;
+      border-radius: 20px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .debug-slider:before {
+      content: '';
+      position: absolute;
+      width: 14px; height: 14px;
+      left: 3px; top: 3px;
+      background: #555;
+      border-radius: 50%;
+      transition: transform 0.2s, background 0.2s;
+    }
+    input:checked + .debug-slider { background: #2a3a10; }
+    input:checked + .debug-slider:before { transform: translateX(16px); background: #8bc34a; }
+
+    .log-box {
+      background: #0e0e0e;
+      border: 1px solid #2a2010;
+      border-radius: 4px;
+      height: 120px;
+      overflow-y: auto;
+      font-family: 'Courier New', monospace;
+      font-size: 11px;
+      padding: 6px;
+      color: #6a8a6a;
+      display: none;
+    }
+    .log-box.visible { display: block; }
+    .log-entry { padding: 1px 0; border-bottom: 1px solid #1a1a0e; }
+    .log-entry.error { color: #e57373; }
+    .log-entry.warn  { color: #fbc02d; }
+    .log-entry.info  { color: #6a9a6a; }
+    .log-entry.debug { color: #4a6a4a; }
+
+    .btn-export {
+      width: 100%;
+      padding: 6px;
+      background: #1a1a0e;
+      border: 1px solid #3a3a20;
+      border-radius: 4px;
+      color: #8a8a60;
+      font-size: 11px;
+      cursor: pointer;
+      margin-top: 6px;
+      display: none;
+      transition: background 0.15s;
+    }
+    .btn-export:hover { background: #2a2a10; }
+    .btn-export.visible { display: block; }
+
+    .shortcut-hint {
+      text-align: center;
+      font-size: 10px;
+      color: #3a3020;
+      padding: 6px 0 4px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <span class="header-title">PoE Sniper</span>
+    <div class="status-dot" id="statusDot"></div>
+  </div>
+
+  <div class="section">
+    <div class="row-toggle">
+      <label for="toggleEnabled">Sniping</label>
+      <label class="toggle-wrap">
+        <input type="checkbox" id="toggleEnabled" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="last-label">Last action</div>
+    <div class="last-value empty" id="lastAction">No actions yet</div>
+  </div>
+
+  <div class="section">
+    <div class="rate-label">
+      <span>Rate limit (account)</span>
+      <span id="rateText">0 / 6</span>
+    </div>
+    <div class="rate-bar-bg">
+      <div class="rate-bar" id="rateBar"></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <button class="btn-stop" id="btnStop">■  EMERGENCY STOP</button>
+    <button class="btn-resume" id="btnResume">▶  Resume</button>
+    <div class="emergency-msg" id="emergencyMsg"></div>
+  </div>
+
+  <div class="section">
+    <div class="debug-header">
+      <span>Debug mode</span>
+      <label class="debug-toggle-wrap">
+        <input type="checkbox" id="toggleDebug">
+        <span class="debug-slider"></span>
+      </label>
+    </div>
+    <div class="log-box" id="logBox"></div>
+    <button class="btn-export" id="btnExport">Export log (.json)</button>
+  </div>
+
+  <div class="shortcut-hint">Emergency stop: ⌘⇧X / Ctrl+Shift+X</div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

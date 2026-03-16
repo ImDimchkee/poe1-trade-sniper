@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "PoE Trade Sniper",
+  "version": "1.0.0",
+  "description": "Auto-clicks Travel to Hideout on new live search listings",
+  "permissions": ["storage"],
+  "commands": {
+    "emergency-stop": {
+      "suggested_key": { "default": "Ctrl+Shift+X", "mac": "Command+Shift+X" },
+      "description": "Emergency stop"
+    }
+  },
+  "host_permissions": ["*://www.pathofexile.com/trade*"],
+  "content_scripts": [
+    {
+      "matches": ["*://www.pathofexile.com/trade/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "PoE Trade Sniper"
+  }
+}
