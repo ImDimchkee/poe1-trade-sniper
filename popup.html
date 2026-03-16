@@ -121,45 +121,37 @@
       transition: width 0.3s, background 0.3s;
     }
 
-    /* ── Stop button ── */
-    .btn-stop {
+    /* ── Action button (START / STOP / WAITING) ── */
+    .action-btn {
+      position: relative;
+      overflow: hidden;
       width: 100%;
       padding: 9px;
-      background: #5a1010;
-      border: 1px solid #8b2020;
       border-radius: 5px;
-      color: #ffcdd2;
       font-size: 13px;
       font-weight: bold;
       letter-spacing: 1.5px;
       cursor: pointer;
-      transition: background 0.15s;
+      text-align: center;
+      outline: none;
     }
-    .btn-stop:hover { background: #8b1a1a; }
-    .btn-stop:disabled { background: #2a2020; color: #5a4040; border-color: #3a2020; cursor: default; }
+    .action-btn-fill {
+      position: absolute;
+      top: 0; left: 0;
+      height: 100%;
+      width: 0%;
+      background: rgba(200, 160, 50, 0.38);
+      border-radius: inherit;
+      pointer-events: none;
+      transition: width 0.25s linear;
+    }
+    .action-btn-text { position: relative; z-index: 1; }
 
-    .btn-resume {
-      width: 100%;
-      padding: 7px;
-      background: #1a3a1a;
-      border: 1px solid #2d6a2d;
-      border-radius: 5px;
-      color: #a0d0a0;
-      font-size: 12px;
-      font-weight: bold;
-      cursor: pointer;
-      margin-top: 6px;
-      transition: background 0.15s;
-      display: none;
-    }
-    .btn-resume:hover { background: #2d5a2d; }
-
-    .emergency-msg {
-      font-size: 11px;
-      color: #e57373;
-      margin-top: 5px;
-      display: none;
-    }
+    .action-btn.stop  { background: #5a1010; border: 1px solid #8b2020; color: #ffcdd2; }
+    .action-btn.stop:hover { background: #8b1a1a; }
+    .action-btn.start { background: #1a3a1a; border: 1px solid #2d6a2d; color: #a0d0a0; }
+    .action-btn.start:hover { background: #2d5a2d; }
+    .action-btn.waiting { background: #2a1e00; border: 1px solid #7a6020; color: #fbc02d; cursor: default; }
 
     /* ── Debug ── */
     .debug-header {
@@ -267,9 +259,20 @@
   </div>
 
   <div class="section">
-    <button class="btn-stop" id="btnStop">■  EMERGENCY STOP</button>
-    <button class="btn-resume" id="btnResume">▶  Resume</button>
-    <div class="emergency-msg" id="emergencyMsg"></div>
+    <button class="action-btn stop" id="actionBtn">
+      <span id="actionBtnFill" class="action-btn-fill"></span>
+      <span id="actionBtnText">■  STOP</span>
+    </button>
+  </div>
+
+  <div class="section">
+    <div class="debug-header">
+      <span>Auto-resume after rate limit</span>
+      <label class="debug-toggle-wrap">
+        <input type="checkbox" id="toggleAutoResume" checked>
+        <span class="debug-slider"></span>
+      </label>
+    </div>
   </div>
 
   <div class="section">

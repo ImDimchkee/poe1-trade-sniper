@@ -9,13 +9,16 @@
 let enabled              = false;
 let debugEnabled         = false;
 let emergency            = false;
+let autoResume           = true;
 let rateLimitUsed        = 0;
 let rateLimitMax         = 6;
 let wsExpectingNewRows   = false;
 let cooldownUntil        = 0;
 let cooldownTimer        = null;
+let ratePauseActive      = false;
+let ratePauseTimer       = null;
 let newItemsSinceClear   = 0;    // clear seen every 10 WS-delivered items
-const COOLDOWN_MS        = 15000;
+const COOLDOWN_MS        = 30000;
 const SEEN_CLEAR_AFTER   = 10;
 const seen               = new Set();
 const LOG                = [];
@@ -47,13 +50,14 @@ function flushLog() {
 
 function loadState() {
   chrome.storage.local.get(
-    ['enabled', 'debug', 'emergency'],
+    ['enabled', 'debug', 'emergency', 'auto_resume'],
     (result) => {
-      enabled      = result.enabled !== false;
+      enabled      = !!result.enabled;
       debugEnabled = !!result.debug;
       emergency    = !!result.emergency;
+      autoResume   = result.auto_resume !== false;
       updateOverlay();
-      log('info', 'state_loaded', { enabled, debugEnabled, emergency });
+      log('info', 'state_loaded', { enabled, debugEnabled, emergency, autoResume });
     }
   );
 }
@@ -84,14 +88,22 @@ chrome.storage.onChanged.addListener((changes) => {
     rateLimitUsed = changes.rate_used.newValue || 0;
     updateOverlay();
   }
+  if ('auto_resume' in changes) {
+    autoResume = changes.auto_resume.newValue !== false;
+    log('info', 'auto_resume_changed', { autoResume });
+  }
 });
 
 // ─── Emergency stop ───────────────────────────────────────────────────────────
 
 function triggerEmergencyStop(reason) {
+  // Cancel any pending rate-limit auto-resume
+  ratePauseActive = false;
+  if (ratePauseTimer) { clearTimeout(ratePauseTimer); ratePauseTimer = null; }
+
   emergency = true;
   enabled   = false;
-  saveState({ enabled: false, emergency: true, emergency_reason: reason, emergency_ts: Date.now() });
+  saveState({ enabled: false, emergency: true, emergency_reason: reason, emergency_ts: Date.now(), rate_pause_until: 0 });
   updateOverlay();
   log('error', 'emergency_stop', { reason });
 }
@@ -103,8 +115,31 @@ function triggerEmergencyStop(reason) {
 
 function triggerRatePause(restrictionSeconds) {
   const secs = restrictionSeconds > 0 ? restrictionSeconds : 10;
-  log('warn', 'rate_paused', { restrictionS: secs });
+  ratePauseActive = true;
+
+  // Reset timer if called multiple times (multiple 429s)
+  if (ratePauseTimer) clearTimeout(ratePauseTimer);
+
+  const pauseStartedAt = Date.now();
+  saveState({ rate_pause_until: pauseStartedAt + secs * 1000, rate_pause_started_at: pauseStartedAt });
+
+  log('warn', 'rate_paused', { restrictionS: secs, autoResume });
   startRatePauseCountdown(secs);
+
+  ratePauseTimer = setTimeout(() => {
+    ratePauseTimer = null;
+    if (!ratePauseActive) return; // user manually stopped during the wait
+    ratePauseActive = false;
+    saveState({ rate_pause_until: 0 });
+    if (emergency) return;
+    log('info', 'rate_pause_ended', { autoResume });
+    if (autoResume) {
+      enabled = true;
+      saveState({ enabled: true, emergency: false });
+      activateLiveSearch();
+    }
+    updateOverlay();
+  }, secs * 1000);
 }
 
 function warnRateLimit(used) {
@@ -139,7 +174,8 @@ function startCooldown() {
 
 function startCooldownDisplay() {
   if (cooldownTimer) clearInterval(cooldownTimer);
-  const label = overlayEl?.querySelector('#poe-sniper-cooldown');
+  const label   = overlayEl?.querySelector('#poe-sniper-cooldown');
+  const skipBtn = overlayEl?.querySelector('#poe-sniper-skip');
   if (!label) return;
 
   cooldownTimer = setInterval(() => {
@@ -147,11 +183,13 @@ function startCooldownDisplay() {
     if (remaining <= 0) {
       clearInterval(cooldownTimer);
       cooldownTimer = null;
-      label.textContent = '';
-      label.style.display = 'none';
+      label.textContent    = '';
+      label.style.display  = 'none';
+      if (skipBtn) skipBtn.style.display = 'none';
     } else {
-      label.style.display = 'block';
-      label.textContent = `Cooldown ${remaining}s`;
+      label.style.display  = 'block';
+      label.textContent    = `Cooldown ${remaining}s`;
+      if (skipBtn) skipBtn.style.display = 'block';
     }
   }, 250);
 }
@@ -161,21 +199,20 @@ let ratePauseEndsAt    = 0;
 
 function startRatePauseCountdown(seconds) {
   ratePauseEndsAt = Date.now() + seconds * 1000;
-  const label = overlayEl?.querySelector('#poe-sniper-cooldown');
+  const label = overlayEl?.querySelector('#poe-sniper-rate-pause');
   if (!label) return;
   if (ratePauseInterval) clearInterval(ratePauseInterval);
 
+  label.style.display = 'block';
   ratePauseInterval = setInterval(() => {
     const remaining = Math.ceil((ratePauseEndsAt - Date.now()) / 1000);
     if (remaining <= 0) {
       clearInterval(ratePauseInterval);
       ratePauseInterval = null;
-      label.textContent = '';
+      label.textContent   = '';
       label.style.display = 'none';
     } else {
-      label.style.display = 'block';
-      label.textContent = `Rate limited ${remaining}s`;
-      label.style.color = '#e53935';
+      label.textContent = `⚠ Rate limited ${remaining}s`;
     }
   }, 500);
 }
@@ -341,27 +378,38 @@ function handleNewResultset(row) {
 
   seen.add(id);
 
-  const btn = row.querySelector('.btns .direct-btn');
-  if (!btn) {
-    log('warn', 'btn_not_found', { id: id.slice(0, 12) });
-    return;
-  }
-
   const name     = row.querySelector('.itemName .lc')?.textContent?.trim() || id.slice(0, 8);
   const priceEl  = row.querySelector('[data-field="price"] span:not(.price-label):not(.currency-image)');
   const currency = row.querySelector('.currency-text span')?.textContent?.trim() || '';
   const price    = priceEl?.textContent?.trim() || '?';
   const priceStr = `${price} ${currency}`.trim();
 
+  // If "In demand. Teleport anyway?" is already rendered, click it directly —
+  // skips one round-trip vs clicking Travel to Hideout and waiting for the dialog.
+  const scope      = row.closest('.resultset') || row;
+  const confirmBtn = [...scope.querySelectorAll('button')].find(
+    (b) => b.textContent.includes('Teleport anyway')
+  );
+  const btn = confirmBtn || row.querySelector('.btns .direct-btn');
+
+  if (!btn) {
+    log('warn', 'btn_not_found', { id: id.slice(0, 12) });
+    return;
+  }
+
   playAlert();
   btn.click();
-  watchForConfirmation(row);
+  log('info', 'clicked', { name, price: priceStr, via: confirmBtn ? 'confirm_direct' : 'direct_btn' });
+
+  // If we clicked Travel to Hideout (not the confirm button), watch in case
+  // GGG raises the "In demand" dialog after the click.
+  if (!confirmBtn) watchForConfirmation(row);
+
   startCooldown();
 
   const action = { name, price: priceStr, ts: Date.now() };
   recordClickHistory(action);
   updateOverlayLastAction(action);
-  log('info', 'clicked', { name, price: priceStr });
 }
 
 // ─── In-demand confirmation ───────────────────────────────────────────────────
@@ -369,13 +417,17 @@ function handleNewResultset(row) {
 // Watch for it and auto-click immediately.
 
 function watchForConfirmation(row) {
+  // Search in .resultset (parent of row) — GGG may add the confirm button
+  // as a sibling element, not inside row itself.
+  const scope = row.closest('.resultset') || row;
+
   function findConfirmBtn() {
-    return [...row.querySelectorAll('button')].find(
+    return [...scope.querySelectorAll('button')].find(
       (b) => b.textContent.includes('Teleport anyway')
     ) || null;
   }
 
-  // Check immediately (already rendered)
+  // Check immediately (may already be rendered)
   const immediate = findConfirmBtn();
   if (immediate) {
     immediate.click();
@@ -383,7 +435,7 @@ function watchForConfirmation(row) {
     return;
   }
 
-  // Watch for it to appear
+  // Watch for DOM insertion OR CSS visibility changes (class/style attribute toggled)
   const obs = new MutationObserver(() => {
     const btn = findConfirmBtn();
     if (!btn) return;
@@ -391,7 +443,12 @@ function watchForConfirmation(row) {
     btn.click();
     log('info', 'confirm_clicked', {});
   });
-  obs.observe(row, { childList: true, subtree: true });
+  obs.observe(scope, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['class', 'style', 'hidden'],
+  });
   setTimeout(() => obs.disconnect(), 5000);
 }
 
@@ -546,10 +603,32 @@ function createOverlay() {
     }
     #poe-sniper-cooldown {
       display: none;
-      padding: 0 10px 4px;
+      padding: 0 10px 2px;
       font-size: 10px;
       color: #fbc02d;
     }
+    #poe-sniper-rate-pause {
+      display: none;
+      padding: 0 10px 2px;
+      font-size: 10px;
+      color: #e57373;
+    }
+    #poe-sniper-skip {
+      display: none;
+      width: calc(100% - 16px);
+      margin: 0 8px 6px;
+      padding: 4px;
+      background: #1a2a3a;
+      border: 1px solid #2a5a7a;
+      border-radius: 4px;
+      color: #80c0e0;
+      font-size: 11px;
+      font-weight: bold;
+      cursor: pointer;
+      letter-spacing: 0.5px;
+      transition: background 0.15s;
+    }
+    #poe-sniper-skip:hover { background: #1e3a50; }
     #poe-sniper-rate-wrap { padding: 2px 10px 5px; }
     #poe-sniper-rate-label { font-size: 10px; color: #6a5a40; margin-bottom: 3px; }
     #poe-sniper-rate-bar-bg { height: 4px; background: #2a2010; border-radius: 2px; overflow: hidden; }
@@ -582,6 +661,8 @@ function createOverlay() {
     </div>
     <div id="poe-sniper-last">—</div>
     <div id="poe-sniper-cooldown"></div>
+    <div id="poe-sniper-rate-pause"></div>
+    <button id="poe-sniper-skip">⚡ Skip Cooldown</button>
     <div id="poe-sniper-rate-wrap">
       <div id="poe-sniper-rate-label">Rate <span id="poe-sniper-rate-text">0/6</span></div>
       <div id="poe-sniper-rate-bar-bg"><div id="poe-sniper-rate-bar"></div></div>
@@ -638,6 +719,16 @@ function createOverlay() {
       activateLiveSearch();
       updateOverlay();
     }
+  });
+
+  el.querySelector('#poe-sniper-skip').addEventListener('click', () => {
+    cooldownUntil = 0;
+    if (cooldownTimer) { clearInterval(cooldownTimer); cooldownTimer = null; }
+    const label   = overlayEl.querySelector('#poe-sniper-cooldown');
+    const skipBtn = overlayEl.querySelector('#poe-sniper-skip');
+    if (label)   { label.textContent = ''; label.style.display = 'none'; }
+    if (skipBtn) { skipBtn.style.display = 'none'; }
+    log('info', 'cooldown_skipped', {});
   });
 
   updateOverlay();
