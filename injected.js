@@ -24,9 +24,10 @@
       ws.addEventListener('message', (e) => {
         try {
           const data = JSON.parse(e.data);
-          if (Array.isArray(data.new) && data.new.length > 0) {
+          // GGG live search format: {"result":"<JWT>","count":N}
+          if (data.result && data.count > 0) {
             window.dispatchEvent(new CustomEvent('poe-sniper-ws', {
-              detail: { type: 'new_items', count: data.new.length }
+              detail: { type: 'new_items', count: data.count }
             }));
           }
         } catch (_) {}
