@@ -258,6 +258,26 @@ window.addEventListener('poe-sniper-rate', (e) => {
   }
 });
 
+// ─── Live search button helpers ───────────────────────────────────────────────
+
+function findLiveSearchBtn(text) {
+  return [...document.querySelectorAll('button')].find(
+    (b) => b.textContent.trim().toLowerCase().includes(text.toLowerCase())
+  ) || null;
+}
+
+function activateLiveSearch() {
+  if (location.href.endsWith('/live')) return; // already active
+  const btn = findLiveSearchBtn('activate live search');
+  if (btn) { btn.click(); log('info', 'ls_btn_clicked', { action: 'activate' }); }
+}
+
+function deactivateLiveSearch() {
+  if (!location.href.endsWith('/live')) return; // already inactive
+  const btn = findLiveSearchBtn('deactivate live search');
+  if (btn) { btn.click(); log('info', 'ls_btn_clicked', { action: 'deactivate' }); }
+}
+
 // ─── Live search on/off detection (URL-based) ────────────────────────────────
 
 let lastUrl = location.href;
@@ -268,14 +288,26 @@ new MutationObserver(() => {
   lastUrl = location.href;
   if (isLive && !wasLive) {
     log('info', 'live_search_activated', {});
+    if (!emergency) {
+      enabled = true;
+      saveState({ enabled: true, emergency: false });
+      updateOverlay();
+    }
   } else if (!isLive && wasLive) {
     wsExpectingNewRows = false;
     log('info', 'live_search_deactivated', {});
+    enabled = false;
+    saveState({ enabled: false });
+    updateOverlay();
   }
 }).observe(document, { subtree: true, childList: true });
 
 if (location.href.endsWith('/live')) {
   log('info', 'live_search_activated', { via: 'direct_url' });
+  if (!emergency) {
+    enabled = true;
+    saveState({ enabled: true, emergency: false });
+  }
 }
 
 // ─── Sound alert ─────────────────────────────────────────────────────────────
@@ -542,12 +574,18 @@ function createOverlay() {
 
   el.querySelector('#poe-sniper-btn').addEventListener('click', () => {
     if (enabled && !emergency) {
-      triggerEmergencyStop('overlay_button');
+      emergency = true;
+      enabled   = false;
+      saveState({ enabled: false, emergency: true, emergency_reason: 'overlay_button', emergency_ts: Date.now() });
+      log('warn', 'emergency_stop', { reason: 'overlay_button' });
+      deactivateLiveSearch();
+      updateOverlay();
     } else {
       emergency = false;
       enabled   = true;
       saveState({ enabled: true, emergency: false, emergency_reason: null });
       log('info', 'resumed', { via: 'overlay_button' });
+      activateLiveSearch();
       updateOverlay();
     }
   });
