@@ -355,12 +355,44 @@ function handleNewResultset(row) {
 
   playAlert();
   btn.click();
+  watchForConfirmation(row);
   startCooldown();
 
   const action = { name, price: priceStr, ts: Date.now() };
   recordClickHistory(action);
   updateOverlayLastAction(action);
   log('info', 'clicked', { name, price: priceStr });
+}
+
+// ─── In-demand confirmation ───────────────────────────────────────────────────
+// After clicking Travel to Hideout, GGG may show "⚠ In demand. Teleport anyway?"
+// Watch for it and auto-click immediately.
+
+function watchForConfirmation(row) {
+  function findConfirmBtn() {
+    return [...row.querySelectorAll('button')].find(
+      (b) => b.textContent.includes('Teleport anyway')
+    ) || null;
+  }
+
+  // Check immediately (already rendered)
+  const immediate = findConfirmBtn();
+  if (immediate) {
+    immediate.click();
+    log('info', 'confirm_clicked', { immediate: true });
+    return;
+  }
+
+  // Watch for it to appear
+  const obs = new MutationObserver(() => {
+    const btn = findConfirmBtn();
+    if (!btn) return;
+    obs.disconnect();
+    btn.click();
+    log('info', 'confirm_clicked', {});
+  });
+  obs.observe(row, { childList: true, subtree: true });
+  setTimeout(() => obs.disconnect(), 5000);
 }
 
 // ─── Polling fallback ────────────────────────────────────────────────────────
