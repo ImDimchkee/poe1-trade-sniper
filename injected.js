@@ -1,4 +1,4 @@
-// PoE Trade Sniper — injected.js
+// SVITLANA — injected.js
 // Runs in MAIN world (document_start) so it can intercept the page's
 // actual WebSocket and XMLHttpRequest instances.
 // Communicates to content.js (isolated world) via CustomEvents on window.
@@ -16,7 +16,7 @@
 
     if (typeof url === 'string' && url.includes('/api/trade/live/')) {
       ws.addEventListener('open', () => {
-        window.dispatchEvent(new CustomEvent('poe-sniper-ws', {
+        window.dispatchEvent(new CustomEvent('svitlana-ws', {
           detail: { type: 'open', url }
         }));
       });
@@ -26,7 +26,7 @@
           const data = JSON.parse(e.data);
           // GGG live search format: {"result":"<JWT>","count":N}
           if (data.result && data.count > 0) {
-            window.dispatchEvent(new CustomEvent('poe-sniper-ws', {
+            window.dispatchEvent(new CustomEvent('svitlana-ws', {
               detail: { type: 'new_items', count: data.count }
             }));
           }
@@ -34,7 +34,7 @@
       });
 
       ws.addEventListener('close', () => {
-        window.dispatchEvent(new CustomEvent('poe-sniper-ws', {
+        window.dispatchEvent(new CustomEvent('svitlana-ws', {
           detail: { type: 'close' }
         }));
       });
@@ -53,7 +53,7 @@ function dispatchRateEvent(url, status, headers) {
   if (!url?.includes('/api/trade/')) return;
   const accountState = headers('X-Rate-Limit-Account-State');
   const accountLimit = headers('X-Rate-Limit-Account');
-  window.dispatchEvent(new CustomEvent('poe-sniper-rate', {
+  window.dispatchEvent(new CustomEvent('svitlana-rate', {
     detail: { status, accountState, accountLimit }
   }));
 }

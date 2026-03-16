@@ -1,4 +1,4 @@
-// PoE Trade Sniper — content.js
+// SVITLANA — content.js
 // Runs in isolated world (document_idle).
 // Receives WS/XHR events from injected.js via CustomEvents.
 
@@ -34,7 +34,7 @@ function log(level, event, data = {}) {
   if (level !== 'debug' || debugEnabled) {
     const detail = Object.keys(data).length ? ' ' + JSON.stringify(data) : '';
     const fn = level === 'error' ? console.error : level === 'warn' ? console.warn : console.log;
-    fn(`[PoE Sniper][${level}] ${event}${detail}`);
+    fn(`[SVITLANA][${level}] ${event}${detail}`);
   }
 
   if (debugEnabled) {
@@ -175,8 +175,8 @@ function startCooldown() {
 
 function startCooldownDisplay() {
   if (cooldownTimer) clearInterval(cooldownTimer);
-  const label   = overlayEl?.querySelector('#poe-sniper-cooldown');
-  const skipBtn = overlayEl?.querySelector('#poe-sniper-skip');
+  const label   = overlayEl?.querySelector('#svitlana-cooldown');
+  const skipBtn = overlayEl?.querySelector('#svitlana-skip');
   if (!label) return;
 
   cooldownTimer = setInterval(() => {
@@ -200,7 +200,7 @@ let ratePauseEndsAt    = 0;
 
 function startRatePauseCountdown(seconds) {
   ratePauseEndsAt = Date.now() + seconds * 1000;
-  const label = overlayEl?.querySelector('#poe-sniper-rate-pause');
+  const label = overlayEl?.querySelector('#svitlana-rate-pause');
   if (!label) return;
   if (ratePauseInterval) clearInterval(ratePauseInterval);
 
@@ -220,7 +220,7 @@ function startRatePauseCountdown(seconds) {
 
 // ─── Events from injected.js (MAIN world) ────────────────────────────────────
 
-window.addEventListener('poe-sniper-ws', (e) => {
+window.addEventListener('svitlana-ws', (e) => {
   const { type, count, url } = e.detail;
   if (type === 'open') {
     log('info', 'live_search_ws_open', { url });
@@ -242,7 +242,7 @@ window.addEventListener('poe-sniper-ws', (e) => {
   }
 });
 
-window.addEventListener('poe-sniper-rate', (e) => {
+window.addEventListener('svitlana-rate', (e) => {
   const { status, accountState, accountLimit } = e.detail;
 
   // Parse the max from the limit header (format: "hits:window:restriction,...")
@@ -507,7 +507,7 @@ function attachResultsObserver(resultsEl) {
         if (debugEnabled) {
           const cls = [...(node.classList || [])].join(' ') || '—';
           const id  = node.getAttribute?.('data-id')?.slice(0, 8) || '';
-          console.log(`[PoE Sniper][dom] ADDED ${node.tagName} .${cls}${id ? ' #' + id : ''}`);
+          console.log(`[SVITLANA][dom] ADDED ${node.tagName} .${cls}${id ? ' #' + id : ''}`);
         }
 
         // Vue adds .resultset first (empty), then .row inside it separately.
@@ -563,7 +563,7 @@ let overlayEl = null;
 function createOverlay() {
   const style = document.createElement('style');
   style.textContent = `
-    #poe-sniper-overlay {
+    #svitlana-overlay {
       position: fixed;
       z-index: 2147483647;
       bottom: 24px;
@@ -578,7 +578,7 @@ function createOverlay() {
       box-shadow: 0 4px 20px rgba(0,0,0,0.7);
       user-select: none;
     }
-    #poe-sniper-header {
+    #svitlana-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -586,15 +586,15 @@ function createOverlay() {
       border-bottom: 1px solid #3a3020;
       cursor: grab;
     }
-    #poe-sniper-header:active { cursor: grabbing; }
-    #poe-sniper-title { font-weight: bold; color: #c8a84b; font-size: 12px; letter-spacing: 0.5px; }
-    #poe-sniper-dot {
+    #svitlana-header:active { cursor: grabbing; }
+    #svitlana-title { font-weight: bold; color: #c8a84b; font-size: 12px; letter-spacing: 0.5px; }
+    #svitlana-dot {
       width: 10px; height: 10px; border-radius: 50%;
       background: #4caf50; box-shadow: 0 0 6px #4caf50; flex-shrink: 0;
     }
-    #poe-sniper-dot.red    { background: #e53935; box-shadow: 0 0 6px #e53935; }
-    #poe-sniper-dot.yellow { background: #fbc02d; box-shadow: 0 0 6px #fbc02d; }
-    #poe-sniper-last {
+    #svitlana-dot.red    { background: #e53935; box-shadow: 0 0 6px #e53935; }
+    #svitlana-dot.yellow { background: #fbc02d; box-shadow: 0 0 6px #fbc02d; }
+    #svitlana-last {
       padding: 5px 10px 2px;
       font-size: 11px;
       color: #7a6a50;
@@ -602,19 +602,19 @@ function createOverlay() {
       overflow: hidden;
       text-overflow: ellipsis;
     }
-    #poe-sniper-cooldown {
+    #svitlana-cooldown {
       display: none;
       padding: 0 10px 2px;
       font-size: 10px;
       color: #fbc02d;
     }
-    #poe-sniper-rate-pause {
+    #svitlana-rate-pause {
       display: none;
       padding: 0 10px 2px;
       font-size: 10px;
       color: #e57373;
     }
-    #poe-sniper-skip {
+    #svitlana-skip {
       display: none;
       width: calc(100% - 16px);
       margin: 0 8px 6px;
@@ -629,12 +629,12 @@ function createOverlay() {
       letter-spacing: 0.5px;
       transition: background 0.15s;
     }
-    #poe-sniper-skip:hover { background: #1e3a50; }
-    #poe-sniper-rate-wrap { padding: 2px 10px 5px; }
-    #poe-sniper-rate-label { font-size: 10px; color: #6a5a40; margin-bottom: 3px; }
-    #poe-sniper-rate-bar-bg { height: 4px; background: #2a2010; border-radius: 2px; overflow: hidden; }
-    #poe-sniper-rate-bar { height: 100%; width: 0%; background: #c8a84b; border-radius: 2px; transition: width 0.3s, background 0.3s; }
-    #poe-sniper-btn {
+    #svitlana-skip:hover { background: #1e3a50; }
+    #svitlana-rate-wrap { padding: 2px 10px 5px; }
+    #svitlana-rate-label { font-size: 10px; color: #6a5a40; margin-bottom: 3px; }
+    #svitlana-rate-bar-bg { height: 4px; background: #2a2010; border-radius: 2px; overflow: hidden; }
+    #svitlana-rate-bar { height: 100%; width: 0%; background: #c8a84b; border-radius: 2px; transition: width 0.3s, background 0.3s; }
+    #svitlana-btn {
       display: block;
       width: calc(100% - 16px);
       margin: 0 8px 8px;
@@ -646,36 +646,36 @@ function createOverlay() {
       cursor: pointer;
       transition: background 0.15s;
     }
-    #poe-sniper-btn.stop  { background: #8b1a1a; border: 1px solid #c0392b; color: #ffcdd2; }
-    #poe-sniper-btn.stop:hover { background: #c0392b; }
-    #poe-sniper-btn.start { background: #1a3a1a; border: 1px solid #2d6a2d; color: #a0d0a0; }
-    #poe-sniper-btn.start:hover { background: #2d5a2d; }
-    #poe-sniper-btn.wait  { background: #2a1e00; border: 1px solid #7a6020; color: #fbc02d; cursor: default; }
+    #svitlana-btn.stop  { background: #8b1a1a; border: 1px solid #c0392b; color: #ffcdd2; }
+    #svitlana-btn.stop:hover { background: #c0392b; }
+    #svitlana-btn.start { background: #1a3a1a; border: 1px solid #2d6a2d; color: #a0d0a0; }
+    #svitlana-btn.start:hover { background: #2d5a2d; }
+    #svitlana-btn.wait  { background: #2a1e00; border: 1px solid #7a6020; color: #fbc02d; cursor: default; }
   `;
   document.head.appendChild(style);
 
   const el = document.createElement('div');
-  el.id = 'poe-sniper-overlay';
+  el.id = 'svitlana-overlay';
   el.innerHTML = `
-    <div id="poe-sniper-header">
-      <span id="poe-sniper-title">PoE Sniper</span>
-      <span id="poe-sniper-dot"></span>
+    <div id="svitlana-header">
+      <span id="svitlana-title">SVITLANA</span>
+      <span id="svitlana-dot"></span>
     </div>
-    <div id="poe-sniper-last">—</div>
-    <div id="poe-sniper-cooldown"></div>
-    <div id="poe-sniper-rate-pause"></div>
-    <button id="poe-sniper-skip">⚡ Skip Cooldown</button>
-    <div id="poe-sniper-rate-wrap">
-      <div id="poe-sniper-rate-label">Rate <span id="poe-sniper-rate-text">0/6</span></div>
-      <div id="poe-sniper-rate-bar-bg"><div id="poe-sniper-rate-bar"></div></div>
+    <div id="svitlana-last">—</div>
+    <div id="svitlana-cooldown"></div>
+    <div id="svitlana-rate-pause"></div>
+    <button id="svitlana-skip">⚡ Skip Cooldown</button>
+    <div id="svitlana-rate-wrap">
+      <div id="svitlana-rate-label">Rate <span id="svitlana-rate-text">0/6</span></div>
+      <div id="svitlana-rate-bar-bg"><div id="svitlana-rate-bar"></div></div>
     </div>
-    <button id="poe-sniper-btn" class="stop">■ STOP</button>
+    <button id="svitlana-btn" class="stop">■ STOP</button>
   `;
   document.body.appendChild(el);
   overlayEl = el;
 
   // Drag
-  const header = el.querySelector('#poe-sniper-header');
+  const header = el.querySelector('#svitlana-header');
   let dragging = false, ox = 0, oy = 0;
   header.addEventListener('mousedown', (e) => {
     dragging = true;
@@ -705,7 +705,7 @@ function createOverlay() {
     }
   });
 
-  el.querySelector('#poe-sniper-btn').addEventListener('click', () => {
+  el.querySelector('#svitlana-btn').addEventListener('click', () => {
     if (ratePauseActive || (enabled && !emergency)) {
       // STOP / cancel waiting → emergency stop
       ratePauseActive = false;
@@ -727,11 +727,11 @@ function createOverlay() {
     }
   });
 
-  el.querySelector('#poe-sniper-skip').addEventListener('click', () => {
+  el.querySelector('#svitlana-skip').addEventListener('click', () => {
     cooldownUntil = 0;
     if (cooldownTimer) { clearInterval(cooldownTimer); cooldownTimer = null; }
-    const label   = overlayEl.querySelector('#poe-sniper-cooldown');
-    const skipBtn = overlayEl.querySelector('#poe-sniper-skip');
+    const label   = overlayEl.querySelector('#svitlana-cooldown');
+    const skipBtn = overlayEl.querySelector('#svitlana-skip');
     if (label)   { label.textContent = ''; label.style.display = 'none'; }
     if (skipBtn) { skipBtn.style.display = 'none'; }
     log('info', 'cooldown_skipped', {});
@@ -743,8 +743,8 @@ function createOverlay() {
 function updateOverlay() {
   if (!overlayEl) return;
 
-  const dot = overlayEl.querySelector('#poe-sniper-dot');
-  const btn = overlayEl.querySelector('#poe-sniper-btn');
+  const dot = overlayEl.querySelector('#svitlana-dot');
+  const btn = overlayEl.querySelector('#svitlana-btn');
 
   if (emergency) {
     dot.className   = 'red';
@@ -770,8 +770,8 @@ function updateOverlay() {
 function updateOverlayRate() {
   if (!overlayEl) return;
   const pct  = rateLimitMax > 0 ? (rateLimitUsed / rateLimitMax) * 100 : 0;
-  const bar  = overlayEl.querySelector('#poe-sniper-rate-bar');
-  const text = overlayEl.querySelector('#poe-sniper-rate-text');
+  const bar  = overlayEl.querySelector('#svitlana-rate-bar');
+  const text = overlayEl.querySelector('#svitlana-rate-text');
   bar.style.width      = pct + '%';
   bar.style.background = pct >= 80 ? '#e53935' : pct >= 60 ? '#fbc02d' : '#c8a84b';
   text.textContent     = `${rateLimitUsed}/${rateLimitMax}`;
@@ -780,7 +780,7 @@ function updateOverlayRate() {
 function updateOverlayLastAction(action) {
   if (!overlayEl) return;
   const time = new Date(action.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  overlayEl.querySelector('#poe-sniper-last').textContent = `${action.name} ${action.price} ${time}`;
+  overlayEl.querySelector('#svitlana-last').textContent = `${action.name} ${action.price} ${time}`;
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────────

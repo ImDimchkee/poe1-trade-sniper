@@ -1,4 +1,4 @@
-// PoE Trade Sniper — popup script
+// SVITLANA — popup script
 
 'use strict';
 
@@ -196,7 +196,7 @@ btnExport.addEventListener('click', () => {
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
     a.href     = url;
-    a.download = `poe-sniper-log-${Date.now()}.json`;
+    a.download = `svitlana-log-${Date.now()}.json`;
     a.click();
     URL.revokeObjectURL(url);
   });

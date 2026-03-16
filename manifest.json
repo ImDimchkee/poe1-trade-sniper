@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "PoE Trade Sniper",
-  "version": "1.2.5",
-  "description": "Auto-clicks Travel to Hideout on new live search listings",
+  "name": "SVITLANA",
+  "version": "1.2.6",
+  "description": "SVITLANA — PoE live trade sniper",
   "permissions": ["storage"],
   "commands": {
     "emergency-stop": {
@@ -26,6 +26,6 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "PoE Trade Sniper"
+    "default_title": "SVITLANA"
   }
 }
