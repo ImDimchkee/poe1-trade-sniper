@@ -26,9 +26,16 @@ function log(level, event, data = {}) {
   const entry = { ts: Date.now(), level, event, data };
   LOG.push(entry);
   if (LOG.length > 200) LOG.shift();
+
+  // info/warn/error always print; debug only when debug mode is on
+  if (level !== 'debug' || debugEnabled) {
+    const detail = Object.keys(data).length ? ' ' + JSON.stringify(data) : '';
+    const fn = level === 'error' ? console.error : level === 'warn' ? console.warn : console.log;
+    fn(`[PoE Sniper][${level}] ${event}${detail}`);
+  }
+
   if (debugEnabled) {
     chrome.storage.local.set({ sniper_log: [...LOG] });
-    console.log(`[PoE Sniper][${level}] ${event}`, data);
   }
 }
 
@@ -292,10 +299,7 @@ function playAlert() {
 
 // ─── Sniping logic ───────────────────────────────────────────────────────────
 
-function handleNewResultset(node) {
-  const row = node.querySelector?.('.row[data-id]');
-  if (!row) return;
-
+function handleNewResultset(row) {
   const id = row.getAttribute('data-id');
   if (!id) return;
 
@@ -361,14 +365,25 @@ function attachResultsObserver(resultsEl) {
     let clickedThisBatch = false;
     for (const mutation of mutations) {
       for (const node of mutation.addedNodes) {
-        if (node.nodeType !== 1 || !node.classList?.contains('resultset')) continue;
-        const row = node.querySelector('.row[data-id]');
-        const id  = row?.getAttribute('data-id');
+        if (node.nodeType !== 1) continue;
+
+        if (debugEnabled) {
+          const cls = [...(node.classList || [])].join(' ') || '—';
+          const id  = node.getAttribute?.('data-id')?.slice(0, 8) || '';
+          console.log(`[PoE Sniper][dom] ADDED ${node.tagName} .${cls}${id ? ' #' + id : ''}`);
+        }
+
+        // Vue adds .resultset first (empty), then .row inside it separately.
+        // Watch for the .row[data-id] itself being added (subtree: true catches this).
+        const row = node.classList?.contains('row') && node.hasAttribute('data-id')
+          ? node
+          : node.querySelector?.('.row[data-id]');
+        const id = row?.getAttribute('data-id');
         if (!id || seen.has(id)) continue;
 
         if (!clickedThisBatch && wsExpectingNewRows && enabled && !emergency && !isOnCooldown()) {
           wsExpectingNewRows = false;
-          handleNewResultset(node);
+          handleNewResultset(row);
           clickedThisBatch = true;
         } else {
           seen.add(id);
@@ -378,7 +393,7 @@ function attachResultsObserver(resultsEl) {
     }
   });
 
-  resultsObserver.observe(resultsEl, { childList: true });
+  resultsObserver.observe(resultsEl, { childList: true, subtree: true });
   log('info', 'observer_attached', {});
 }
 
