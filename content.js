@@ -66,6 +66,7 @@ chrome.storage.onChanged.addListener((changes) => {
   if ('enabled' in changes) {
     enabled = changes.enabled.newValue;
     if (enabled && !emergency) activateLiveSearch();
+    else if (!enabled) deactivateLiveSearch();
     log('info', 'enabled_changed', { enabled });
     updateOverlay();
   }
