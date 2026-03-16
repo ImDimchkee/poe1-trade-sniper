@@ -87,6 +87,33 @@ function triggerEmergencyStop(reason) {
   log('error', 'emergency_stop', { reason });
 }
 
+// ─── Rate-limit auto-pause ────────────────────────────────────────────────────
+// 429 pauses sniping for the restriction window then auto-resumes.
+// Does not require manual intervention.
+
+let ratePauseTimer = null;
+
+function triggerRatePause(restrictionSeconds) {
+  const pauseMs = (restrictionSeconds > 0 ? restrictionSeconds : 60) * 1000;
+  enabled = false;
+  saveState({ enabled: false });
+  updateOverlay();
+  log('warn', 'rate_paused', { pauseMs });
+
+  if (ratePauseTimer) clearTimeout(ratePauseTimer);
+  startRatePauseCountdown(Math.ceil(pauseMs / 1000));
+
+  ratePauseTimer = setTimeout(() => {
+    ratePauseTimer = null;
+    if (!emergency) {
+      enabled = true;
+      saveState({ enabled: true });
+      updateOverlay();
+      log('info', 'rate_pause_ended', {});
+    }
+  }, pauseMs);
+}
+
 function warnRateLimit(used) {
   rateLimitUsed = used;
   saveState({ rate_used: used, rate_max: rateLimitMax });
@@ -136,6 +163,30 @@ function startCooldownDisplay() {
   }, 250);
 }
 
+let ratePauseInterval  = null;
+let ratePauseEndsAt    = 0;
+
+function startRatePauseCountdown(seconds) {
+  ratePauseEndsAt = Date.now() + seconds * 1000;
+  const label = overlayEl?.querySelector('#poe-sniper-cooldown');
+  if (!label) return;
+  if (ratePauseInterval) clearInterval(ratePauseInterval);
+
+  ratePauseInterval = setInterval(() => {
+    const remaining = Math.ceil((ratePauseEndsAt - Date.now()) / 1000);
+    if (remaining <= 0) {
+      clearInterval(ratePauseInterval);
+      ratePauseInterval = null;
+      label.textContent = '';
+      label.style.display = 'none';
+    } else {
+      label.style.display = 'block';
+      label.textContent = `Rate limited ${remaining}s`;
+      label.style.color = '#e53935';
+    }
+  }, 500);
+}
+
 // ─── Events from injected.js (MAIN world) ────────────────────────────────────
 
 window.addEventListener('poe-sniper-ws', (e) => {
@@ -162,31 +213,41 @@ window.addEventListener('poe-sniper-ws', (e) => {
 window.addEventListener('poe-sniper-rate', (e) => {
   const { status, accountState, accountLimit } = e.detail;
 
-  if (status === 429 || status === 403) {
-    triggerEmergencyStop('http_' + status);
-    log('error', 'rate_limited', { status });
-    return;
+  // Parse the max from the limit header (format: "hits:window:restriction,...")
+  if (accountLimit) {
+    const parsed = parseInt(accountLimit.split(':')[0], 10);
+    if (parsed > 0) rateLimitMax = parsed;
   }
 
-  if (accountLimit) {
-    rateLimitMax = parseInt(accountLimit.split(':')[0], 10) || 6;
-  }
   if (accountState) {
-    const parts      = accountState.split(':').map(Number);
-    const used       = parts[0];
-    const banSeconds = parts[2];
-    rateLimitUsed    = used;
+    // State can be multi-rule: "hits:window:restriction,hits:window:restriction"
+    // Find the highest active restriction across all rules
+    let used           = 0;
+    let maxRestriction = 0;
+    for (const rule of accountState.split(',')) {
+      const parts = rule.trim().split(':').map(Number);
+      if (parts[0] > used) used = parts[0];
+      if (parts[2] > maxRestriction) maxRestriction = parts[2];
+    }
+
+    rateLimitUsed = used;
     saveState({ rate_used: used, rate_max: rateLimitMax });
     updateOverlay();
 
-    if (banSeconds > 0) {
-      triggerEmergencyStop('rate_limit_ban');
-      log('error', 'rate_ban_active', { banSeconds, state: accountState });
-    } else if (used >= rateLimitMax - 1) {
+    if (status === 429 || status === 403) {
+      log('warn', 'rate_limited', { status, restrictionS: maxRestriction });
+      triggerRatePause(maxRestriction);
+    } else if (maxRestriction > 0) {
+      log('warn', 'rate_ban_active', { restrictionS: maxRestriction, state: accountState });
+      triggerRatePause(maxRestriction);
+    } else if (used >= rateLimitMax - 2) {
       warnRateLimit(used);
     } else {
-      log('debug', 'rate_state', { state: accountState, used });
+      log('debug', 'rate_state', { state: accountState, used, max: rateLimitMax });
     }
+  } else if (status === 429 || status === 403) {
+    log('warn', 'rate_limited_no_headers', { status });
+    triggerRatePause(60);
   }
 });
 

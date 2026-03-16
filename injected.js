@@ -46,30 +46,54 @@
   window.WebSocket.prototype = OrigWS.prototype;
 })();
 
+// ─── Shared rate-event dispatcher ────────────────────────────────────────────
+
+function dispatchRateEvent(url, status, headers) {
+  if (!url?.includes('/api/trade/')) return;
+  const accountState = headers('X-Rate-Limit-Account-State');
+  const accountLimit = headers('X-Rate-Limit-Account');
+  window.dispatchEvent(new CustomEvent('poe-sniper-rate', {
+    detail: { status, accountState, accountLimit }
+  }));
+}
+
 // ─── XHR interception ────────────────────────────────────────────────────────
-// Reads X-Rate-Limit-Account-State from /api/trade/fetch/ responses.
 
 (function interceptXHR() {
   const _open = XMLHttpRequest.prototype.open;
   const _send = XMLHttpRequest.prototype.send;
 
   XMLHttpRequest.prototype.open = function (method, url, ...rest) {
-    this._sniper_url = url;
+    this._sniper_url = typeof url === 'string' ? url : String(url);
     return _open.call(this, method, url, ...rest);
   };
 
   XMLHttpRequest.prototype.send = function (...args) {
     this.addEventListener('load', function () {
-      if (!this._sniper_url?.includes('/api/trade/fetch/')) return;
-
-      const status = this.status;
-      const accountState = this.getResponseHeader('X-Rate-Limit-Account-State');
-      const accountLimit = this.getResponseHeader('X-Rate-Limit-Account');
-
-      window.dispatchEvent(new CustomEvent('poe-sniper-rate', {
-        detail: { status, accountState, accountLimit }
-      }));
+      dispatchRateEvent(
+        this._sniper_url,
+        this.status,
+        (name) => this.getResponseHeader(name)
+      );
     });
     return _send.call(this, ...args);
+  };
+})();
+
+// ─── fetch() interception ─────────────────────────────────────────────────────
+// The trade page uses fetch() for /api/trade/fetch/ — XHR alone misses it.
+
+(function interceptFetch() {
+  const _fetch = window.fetch;
+  window.fetch = function (input, init) {
+    const url = typeof input === 'string' ? input : input?.url ?? '';
+    return _fetch.call(this, input, init).then((response) => {
+      dispatchRateEvent(
+        url,
+        response.status,
+        (name) => response.headers.get(name)
+      );
+      return response;
+    });
   };
 })();
