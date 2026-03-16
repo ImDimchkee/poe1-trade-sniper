@@ -76,32 +76,67 @@ function dispatchRateEvent(url, status, headers) {
         this.status,
         (name) => this.getResponseHeader(name)
       );
+      if (this._sniper_url?.includes('/api/trade/whisper')) {
+        if (this.status !== 200) {
+          window.dispatchEvent(new CustomEvent('svitlana-whisper', { detail: { success: false } }));
+        } else {
+          try {
+            const data = JSON.parse(this.responseText);
+            window.dispatchEvent(new CustomEvent('svitlana-whisper', { detail: { success: !!data.success } }));
+          } catch (_) {}
+        }
+      }
     });
     return _send.call(this, ...args);
   };
 })();
 
-// ─── fetch() interception ─────────────────────────────────────────────────────
+// ─── fetch() interception + item-fetch throttle ──────────────────────────────
 // The trade page uses fetch() for /api/trade/fetch/ — XHR alone misses it.
+// When a WS message delivers 60 items the page fires 60 simultaneous fetches
+// and gets rate-limited. We queue /api/trade/fetch/ requests and process at
+// most ITEM_FETCH_CONCURRENCY at a time to stay within GGG's limits.
 
 (function interceptFetch() {
-  const _fetch = window.fetch;
-  window.fetch = function (input, init) {
-    const url = typeof input === 'string' ? input : input?.url ?? '';
-    return _fetch.call(this, input, init).then((response) => {
-      dispatchRateEvent(
-        url,
-        response.status,
-        (name) => response.headers.get(name)
-      );
+  const _fetch                 = window.fetch;
+  const ITEM_FETCH_CONCURRENCY = 4;
+  const itemQueue              = [];
+  let   itemActive             = 0;
+
+  function drainItemQueue() {
+    while (itemActive < ITEM_FETCH_CONCURRENCY && itemQueue.length > 0) {
+      const { input, init, resolve, reject } = itemQueue.shift();
+      itemActive++;
+      execFetch(typeof input === 'string' ? input : (input?.url ?? ''), input, init)
+        .then(resolve).catch(reject)
+        .finally(() => { itemActive--; drainItemQueue(); });
+    }
+  }
+
+  function execFetch(url, input, init) {
+    return _fetch.call(window, input, init).then((response) => {
+      dispatchRateEvent(url, response.status, (name) => response.headers.get(name));
       if (url.includes('/api/trade/whisper')) {
-        response.clone().json().then((data) => {
-          window.dispatchEvent(new CustomEvent('svitlana-whisper', {
-            detail: { success: !!data.success }
-          }));
-        }).catch(() => {});
+        if (response.status !== 200) {
+          window.dispatchEvent(new CustomEvent('svitlana-whisper', { detail: { success: false } }));
+        } else {
+          response.clone().json().then((data) => {
+            window.dispatchEvent(new CustomEvent('svitlana-whisper', { detail: { success: !!data.success } }));
+          }).catch(() => {});
+        }
       }
       return response;
     });
+  }
+
+  window.fetch = function (input, init) {
+    const url = typeof input === 'string' ? input : (input?.url ?? '');
+    if (url.includes('/api/trade/fetch/')) {
+      return new Promise((resolve, reject) => {
+        itemQueue.push({ input, init, resolve, reject });
+        drainItemQueue();
+      });
+    }
+    return execFetch(url, input, init);
   };
 })();

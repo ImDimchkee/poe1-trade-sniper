@@ -284,8 +284,10 @@ window.addEventListener('svitlana-rate', (e) => {
       log('warn', 'rate_restricted', { status, restrictionS: maxRestriction, state: accountState });
       triggerRatePause(maxRestriction);
     } else if (status === 429 || status === 403) {
-      // 429 but no active restriction in headers yet — log only, page self-recovers
+      // No restriction in headers yet — pause with a conservative default so we
+      // don't keep sniping while the account is blocked
       log('warn', 'rate_limited', { status, used, max: rateLimitMax });
+      if (!ratePauseActive) triggerRatePause(15);
     } else if (used >= rateLimitMax - 2) {
       warnRateLimit(used);
     } else {
@@ -438,6 +440,8 @@ function handleNewResultset(row) {
   );
   const btn = confirmBtn || row.querySelector('.btns .direct-btn');
 
+  if (confirmBtn) log('info', 'in_demand_on_arrival', { name, price: priceStr });
+
   if (!btn) {
     log('warn', 'btn_not_found', { id: id.slice(0, 12) });
     return;
@@ -487,12 +491,12 @@ function watchForConfirmation(row) {
   const obs = new MutationObserver(() => {
     // First try text-based search (separate confirm dialog)
     const byText = findConfirmBtn();
-    if (byText) { obs.disconnect(); byText.click(); log('info', 'confirm_clicked', {}); return; }
+    if (byText) { obs.disconnect(); log('info', 'in_demand_detected', {}); byText.click(); log('info', 'confirm_clicked', {}); return; }
 
     // GGG updates the same direct-btn in-place: adds 'expired' class + changes text.
     // Fall back to selecting it by class directly.
     const expired = scope.querySelector('.direct-btn.expired');
-    if (expired) { obs.disconnect(); expired.click(); log('info', 'confirm_clicked', { via: 'expired' }); }
+    if (expired) { obs.disconnect(); log('info', 'in_demand_detected', { via: 'expired_class' }); expired.click(); log('info', 'confirm_clicked', { via: 'expired' }); }
   });
   obs.observe(scope, {
     childList: true,
