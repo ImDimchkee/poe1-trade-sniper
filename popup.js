@@ -11,6 +11,8 @@ const actionBtn        = document.getElementById('actionBtn');
 const actionBtnFill    = document.getElementById('actionBtnFill');
 const actionBtnText    = document.getElementById('actionBtnText');
 const toggleAutoResume = document.getElementById('toggleAutoResume');
+const toggleSync       = document.getElementById('toggleSync');
+const inputCooldown    = document.getElementById('inputCooldown');
 const toggleDebug      = document.getElementById('toggleDebug');
 const logBox           = document.getElementById('logBox');
 const btnExport        = document.getElementById('btnExport');
@@ -18,10 +20,12 @@ const btnExport        = document.getElementById('btnExport');
 // ─── Load state ───────────────────────────────────────────────────────────────
 
 chrome.storage.local.get(
-  ['enabled', 'debug', 'auto_resume', 'emergency', 'click_history', 'rate_used', 'rate_max', 'sniper_log', 'rate_pause_until', 'rate_pause_started_at'],
+  ['enabled', 'debug', 'auto_resume', 'live_sync', 'cooldown_ms', 'emergency', 'click_history', 'rate_used', 'rate_max', 'sniper_log', 'rate_pause_until', 'rate_pause_started_at'],
   (s) => {
     toggleEnabled.checked    = !!s.enabled;
     toggleAutoResume.checked = s.auto_resume !== false;
+    toggleSync.checked       = s.live_sync !== false;
+    inputCooldown.value      = s.cooldown_ms ? Math.round(s.cooldown_ms / 1000) : 30;
     applyActionBtn(!!s.enabled, !!s.emergency, s.rate_pause_until || 0, s.rate_pause_started_at || 0);
     updateDot(!!s.enabled, !!s.emergency);
     applyDebug(!!s.debug);
@@ -183,6 +187,16 @@ actionBtn.addEventListener('click', () => {
 
 toggleAutoResume.addEventListener('change', () => {
   chrome.storage.local.set({ auto_resume: toggleAutoResume.checked });
+});
+
+toggleSync.addEventListener('change', () => {
+  chrome.storage.local.set({ live_sync: toggleSync.checked });
+});
+
+inputCooldown.addEventListener('change', () => {
+  const secs = Math.max(5, Math.min(300, parseInt(inputCooldown.value, 10) || 30));
+  inputCooldown.value = secs;
+  chrome.storage.local.set({ cooldown_ms: secs * 1000 });
 });
 
 toggleDebug.addEventListener('change', () => {

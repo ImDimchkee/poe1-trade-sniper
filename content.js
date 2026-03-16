@@ -10,6 +10,8 @@ let enabled              = false;
 let debugEnabled         = false;
 let emergency            = false;
 let autoResume           = true;
+let liveSync             = true;
+let cooldownMs           = 30000;
 let rateLimitUsed        = 0;
 let rateLimitMax         = 6;
 let wsExpectingNewRows   = false;
@@ -20,7 +22,6 @@ let whisperRetried       = false;
 let ratePauseActive      = false;
 let ratePauseTimer       = null;
 let newItemsSinceClear   = 0;    // clear seen every 10 WS-delivered items
-const COOLDOWN_MS        = 30000;
 const SEEN_CLEAR_AFTER   = 10;
 const seen               = new Set();
 const LOG                = [];
@@ -52,14 +53,16 @@ function flushLog() {
 
 function loadState() {
   chrome.storage.local.get(
-    ['enabled', 'debug', 'emergency', 'auto_resume'],
+    ['enabled', 'debug', 'emergency', 'auto_resume', 'live_sync', 'cooldown_ms'],
     (result) => {
       enabled      = !!result.enabled;
       debugEnabled = !!result.debug;
       emergency    = !!result.emergency;
       autoResume   = result.auto_resume !== false;
+      liveSync     = result.live_sync !== false;
+      cooldownMs   = result.cooldown_ms || 30000;
       updateOverlay();
-      log('info', 'state_loaded', { enabled, debugEnabled, emergency, autoResume });
+      log('info', 'state_loaded', { enabled, debugEnabled, emergency, autoResume, liveSync, cooldownMs });
     }
   );
 }
@@ -93,6 +96,14 @@ chrome.storage.onChanged.addListener((changes) => {
   if ('auto_resume' in changes) {
     autoResume = changes.auto_resume.newValue !== false;
     log('info', 'auto_resume_changed', { autoResume });
+  }
+  if ('live_sync' in changes) {
+    liveSync = changes.live_sync.newValue !== false;
+    log('info', 'live_sync_changed', { liveSync });
+  }
+  if ('cooldown_ms' in changes) {
+    cooldownMs = changes.cooldown_ms.newValue || 30000;
+    log('info', 'cooldown_ms_changed', { cooldownMs });
   }
 });
 
@@ -170,8 +181,8 @@ function isOnCooldown() {
 }
 
 function startCooldown() {
-  cooldownUntil = Date.now() + COOLDOWN_MS;
-  log('info', 'cooldown_started', { ms: COOLDOWN_MS });
+  cooldownUntil = Date.now() + cooldownMs;
+  log('info', 'cooldown_started', { ms: cooldownMs });
   startCooldownDisplay();
 }
 
@@ -345,7 +356,7 @@ new MutationObserver(() => {
   lastUrl = location.href;
   if (isLive && !wasLive) {
     log('info', 'live_search_activated', {});
-    if (!emergency) {
+    if (liveSync && !emergency) {
       enabled = true;
       saveState({ enabled: true, emergency: false });
       updateOverlay();
@@ -353,15 +364,17 @@ new MutationObserver(() => {
   } else if (!isLive && wasLive) {
     wsExpectingNewRows = false;
     log('info', 'live_search_deactivated', {});
-    enabled = false;
-    saveState({ enabled: false });
-    updateOverlay();
+    if (liveSync) {
+      enabled = false;
+      saveState({ enabled: false });
+      updateOverlay();
+    }
   }
 }).observe(document, { subtree: true, childList: true });
 
 if (location.href.endsWith('/live')) {
   log('info', 'live_search_activated', { via: 'direct_url' });
-  if (!emergency) {
+  if (liveSync && !emergency) {
     enabled = true;
     saveState({ enabled: true, emergency: false });
   }
