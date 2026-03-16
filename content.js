@@ -324,10 +324,6 @@ function handleNewResultset(row) {
 
   log('debug', 'new_row_seen', { id: id.slice(0, 12) });
 
-  if (!wsExpectingNewRows) {
-    log('debug', 'skipped_not_ws', { id: id.slice(0, 12) });
-    return;
-  }
   if (!enabled || emergency) {
     log('debug', 'skipped_disabled', { enabled, emergency });
     return;
