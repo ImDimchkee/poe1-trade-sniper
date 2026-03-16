@@ -65,6 +65,7 @@ function saveState(patch) {
 chrome.storage.onChanged.addListener((changes) => {
   if ('enabled' in changes) {
     enabled = changes.enabled.newValue;
+    if (enabled && !emergency) activateLiveSearch();
     log('info', 'enabled_changed', { enabled });
     updateOverlay();
   }
@@ -94,31 +95,15 @@ function triggerEmergencyStop(reason) {
   log('error', 'emergency_stop', { reason });
 }
 
-// ─── Rate-limit auto-pause ────────────────────────────────────────────────────
-// 429 pauses sniping for the restriction window then auto-resumes.
-// Does not require manual intervention.
-
-let ratePauseTimer = null;
+// ─── Rate-limit display (no sniping pause) ───────────────────────────────────
+// We don't disable sniping on rate limits — our extension makes no API calls,
+// only clicks a DOM button. Disabling would cause items to be added to `seen`
+// and permanently missed. Just show a countdown overlay.
 
 function triggerRatePause(restrictionSeconds) {
-  const pauseMs = (restrictionSeconds > 0 ? restrictionSeconds : 60) * 1000;
-  enabled = false;
-  saveState({ enabled: false });
-  updateOverlay();
-  log('warn', 'rate_paused', { pauseMs });
-
-  if (ratePauseTimer) clearTimeout(ratePauseTimer);
-  startRatePauseCountdown(Math.ceil(pauseMs / 1000));
-
-  ratePauseTimer = setTimeout(() => {
-    ratePauseTimer = null;
-    if (!emergency) {
-      enabled = true;
-      saveState({ enabled: true });
-      updateOverlay();
-      log('info', 'rate_pause_ended', {});
-    }
-  }, pauseMs);
+  const secs = restrictionSeconds > 0 ? restrictionSeconds : 10;
+  log('warn', 'rate_paused', { restrictionS: secs });
+  startRatePauseCountdown(secs);
 }
 
 function warnRateLimit(used) {
@@ -203,6 +188,7 @@ window.addEventListener('poe-sniper-ws', (e) => {
   } else if (type === 'new_items') {
     wsExpectingNewRows = true;
     setTimeout(() => { wsExpectingNewRows = false; }, 25000);
+    scheduleItemScan();
 
     // Track items to know when to clear seen
     newItemsSinceClear += count;
@@ -380,6 +366,38 @@ function handleNewResultset(row) {
   log('info', 'clicked', { name, price: priceStr });
 }
 
+// ─── Polling fallback ────────────────────────────────────────────────────────
+// After a WS event, poll DOM for unseen rows in case MutationObserver
+// fires before/after wsExpectingNewRows is set (race condition).
+
+let scanTimer = null;
+
+function scheduleItemScan() {
+  if (scanTimer) clearInterval(scanTimer);
+  let attempts = 0;
+  scanTimer = setInterval(() => {
+    attempts++;
+    if (attempts > 20 || !wsExpectingNewRows) {  // up to 4s (20 × 200ms)
+      clearInterval(scanTimer);
+      scanTimer = null;
+      return;
+    }
+    if (!enabled || emergency || isOnCooldown()) return;
+    const results = document.querySelector('.results');
+    if (!results) return;
+    for (const row of results.querySelectorAll('.row[data-id]')) {
+      const id = row.getAttribute('data-id');
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      handleNewResultset(row);
+      wsExpectingNewRows = false;
+      clearInterval(scanTimer);
+      scanTimer = null;
+      return;
+    }
+  }, 200);
+}
+
 // ─── MutationObserver ────────────────────────────────────────────────────────
 
 let resultsObserver  = null;
@@ -418,8 +436,11 @@ function attachResultsObserver(resultsEl) {
           handleNewResultset(row);
           clickedThisBatch = true;
         } else {
-          seen.add(id);
-          log('debug', 'batch_extra_skipped', { id: id.slice(0, 12) });
+          // Only permanently mark as seen for non-retriable reasons.
+          // If disabled/emergency, don't mark seen — the poll will retry.
+          const retriable = !enabled || emergency;
+          if (!retriable) seen.add(id);
+          log('debug', 'batch_extra_skipped', { id: id.slice(0, 12), retriable });
         }
       }
     }

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "PoE Trade Sniper",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "Auto-clicks Travel to Hideout on new live search listings",
   "permissions": ["storage"],
   "commands": {
